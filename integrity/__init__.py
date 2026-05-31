@@ -1,0 +1,24 @@
+"""
+integrity/__init__.py — DarkPassenger Integrity Layer
+
+Public exports for the circuit breaker and communication rules engine.
+"""
+
+from integrity.circuit_breaker import CircuitBreaker, TransformedOutput
+from integrity.communication_rules import (
+    CommunicationRulesEngine,
+    PreFlightResult,
+    RuleViolation,
+    RuleCategory,
+    check_rules,
+)
+
+all = [
+    "CircuitBreaker",
+    "TransformedOutput",
+    "CommunicationRulesEngine",
+    "PreFlightResult",
+    "RuleViolation",
+    "RuleCategory",
+    "check_rules",
+]
