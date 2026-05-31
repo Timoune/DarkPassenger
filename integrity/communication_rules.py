@@ -26,7 +26,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import List, Optional
 
-from types.integrity_types import (
+from dp_types.integrity_types import (
     GhostMindOutput,
     CriticalityLevel,
     OVERRIDE_LEVELS,
