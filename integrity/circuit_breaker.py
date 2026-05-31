@@ -46,7 +46,7 @@ import re
 from dataclasses import dataclass
 from typing import List, Optional, Tuple
 
-from types.integrity_types import (
+from dp_types.integrity_types import (
     GhostMindOutput,
     ValidationResult,
     ValidationStatus,
@@ -340,7 +340,7 @@ class CircuitBreaker:
             return violations  # nothing more to check
 
         # 2. No fabricated numbers
-        v = self._check_no_fabricated_numbers(ghost.content, candidate.content)
+        v = self._check_no_fabricated_numbers(ghost, candidate.content)
         if v:
             violations.append(v)
 
@@ -430,12 +430,25 @@ class CircuitBreaker:
         text: str,
     ) -> Optional[ValidationViolation]:
         """Verify that a specific numerical value is present in the text."""
-        # Check both integer and float representations
+        # Build all acceptable representations of this number
         representations = {str(value)}
         if isinstance(value, float) and value == int(value):
             representations.add(str(int(value)))
         elif isinstance(value, int):
             representations.add(str(float(value)))
+
+        # Also check for numbers extracted by regex to catch "100.0" matching 100
+        # by comparing their float values
+        try:
+            target_float = float(value)
+            for extracted in _NUMBER_RE.findall(text):
+                try:
+                    if float(extracted.rstrip("%")) == target_float:
+                        return None  # found a numerically equivalent form
+                except ValueError:
+                    continue
+        except (ValueError, TypeError):
+            pass
 
         for rep in representations:
             if rep in text:
@@ -603,7 +616,7 @@ class CircuitBreaker:
 
     def _check_no_fabricated_numbers(
         self,
-        source: str,
+        ghost: GhostMindOutput,
         candidate: str,
     ) -> Optional[ValidationViolation]:
         """
@@ -611,10 +624,42 @@ class CircuitBreaker:
 
         This catches cases like DarkPassenger saying "about 150ms" when GhostMind
         said 142ms — small alterations that seem harmless but violate the spec.
-        """
-        source_numbers = set(_NUMBER_RE.findall(source))
-        candidate_numbers = set(_NUMBER_RE.findall(candidate))
 
+        "Source" is the union of all GhostMind-owned content:
+            - ghost.content
+            - ghost.warnings
+            - ghost.tool_results
+            - ghost.risk_assessment
+            - ghost.protected_fields values (these are authoritative)
+
+        This prevents false positives when a protected number (e.g. 94 from
+        a warning like "94%") or a tool result number appears in the candidate.
+        """
+        # Collect all numbers present anywhere in GhostMind-owned content
+        all_source_text_parts = [ghost.content]
+        all_source_text_parts.extend(ghost.warnings)
+        all_source_text_parts.extend(ghost.tool_results)
+        if ghost.risk_assessment:
+            all_source_text_parts.append(ghost.risk_assessment)
+
+        combined_source = " ".join(all_source_text_parts)
+        source_numbers = set(_NUMBER_RE.findall(combined_source))
+
+        # Also include normalised forms of protected field values
+        # e.g. 100 → also allow "100.0"; 100.0 → also allow "100"
+        for pf in ghost.protected_fields:
+            val = pf.value
+            source_numbers.add(str(val))
+            if isinstance(val, float) and val == int(val):
+                source_numbers.add(str(int(val)))
+            elif isinstance(val, int):
+                source_numbers.add(str(float(val)))
+            # Also add percentage form if bare number is present
+            source_numbers.add(f"{val}%")
+            if isinstance(val, int):
+                source_numbers.add(f"{float(val)}%")
+
+        candidate_numbers = set(_NUMBER_RE.findall(candidate))
         fabricated = candidate_numbers - source_numbers
 
         # Filter out very short numbers (1, 2, 3...) which are likely ordinals
@@ -628,8 +673,8 @@ class CircuitBreaker:
                 found=f"new numbers: {meaningful_fabricated}",
                 description=(
                     f"Transformed output introduces numerical values "
-                    f"{meaningful_fabricated} that are not present in the "
-                    "GhostMind source. Numbers must not be invented or altered."
+                    f"{meaningful_fabricated} that are not present in any "
+                    "GhostMind-owned content. Numbers must not be invented or altered."
                 ),
             )
         return None
