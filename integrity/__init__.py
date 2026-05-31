@@ -13,7 +13,7 @@ from integrity.communication_rules import (
     check_rules,
 )
 
-all = [
+__all__ = [
     "CircuitBreaker",
     "TransformedOutput",
     "CommunicationRulesEngine",
