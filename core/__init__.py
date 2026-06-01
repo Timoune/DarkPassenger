@@ -31,6 +31,25 @@ from core.transformation_pipeline import (
     TransformationInput,
     TransformationResult,
 )
+from core.stability_layer import (
+    CommunicationStabilityLayer,
+    StabilityCheckResult,
+    WARMUP_RESPONSES,
+)
+from core.expression_confidence import (
+    ExpressionConfidenceSystem,
+    ConfidenceCalculation,
+)
+from core.trait_conflict_resolver import (
+    TraitConflictResolver,
+    ConflictResolutionResult,
+    TraitAdjustment,
+)
+from core.speech_fingerprint import (
+    SpeechFingerprintEngine,
+    FingerprintResult,
+    SINGLE_SENTENCE_THRESHOLD,
+)
 
 __all__ = [
     # Persona Vector
@@ -56,4 +75,16 @@ __all__ = [
     "TransformationPipeline",
     "TransformationInput",
     "TransformationResult",
+    # Behavioral Logic — The Passenger (Part 5-8)
+    "CommunicationStabilityLayer",
+    "StabilityCheckResult",
+    "WARMUP_RESPONSES",
+    "ExpressionConfidenceSystem",
+    "ConfidenceCalculation",
+    "TraitConflictResolver",
+    "ConflictResolutionResult",
+    "TraitAdjustment",
+    "SpeechFingerprintEngine",
+    "FingerprintResult",
+    "SINGLE_SENTENCE_THRESHOLD",
 ]
