@@ -8,20 +8,20 @@ Pipeline stages (per spec §10):
     1.  Input Reception         — validate and unpack GhostMindOutput
     2.  Pre-flight Check        — CommunicationRulesEngine gate
     3.  Persona Vector Gen      — PersonaVectorEngine.build / build_blended
-    4.  Stability Check         — [STUB for Part 5]
-    5.  Expression Attenuation  — apply max_expression cap to vector
+    4.  Stability Check         — CommunicationStabilityLayer (smoothing)
+    5.  Expression Attenuation  — ExpressionConfidenceSystem (entropy-linked)
     6.  Budget Allocation       — ExpressionBudget from vector + profile
-    7.  Trait Conflict Res.     — [STUB for Part 6]
-    8.  Speech Fingerprint      — [STUB for Parts 7-8]
+    7.  Trait Conflict Res.     — TraitConflictResolver (priority hierarchy)
+    8.  Speech Fingerprint      — SpeechFingerprintEngine (structural shaping)
     9.  Validation Pipeline     — CircuitBreaker (3-stage)
     10. Final Response          — certified output
 
-Stages 4, 7, and 8 are explicit extension points: each has a hook attribute
-that can be replaced with a real implementation when those parts are built.
+All four Behavioral Logic modules are auto-wired at construction time.
+External hook attributes remain available for overriding individual stages:
 
-    pipeline.stability_hook    = CommunicationStabilityLayer(...)  # Part 5
-    pipeline.conflict_hook     = TraitConflictResolver(...)         # Part 6
-    pipeline.fingerprint_hook  = SpeechFingerprintEngine(...)       # Part 7-8
+    pipeline.stability_hook    = custom_stability_fn
+    pipeline.conflict_hook     = custom_conflict_fn
+    pipeline.fingerprint_hook  = custom_fingerprint_fn
 
 The pipeline is always safe to call. Any internal error falls through to the
 CircuitBreaker, which falls back to raw GhostMind content if needed.
@@ -52,6 +52,10 @@ from core.persona_vector import (
 )
 from core.config_manager import ConfigManager, PersonaProfile
 from core.runtime_state import RuntimeState, RuntimeStateManager
+from core.stability_layer import CommunicationStabilityLayer
+from core.expression_confidence import ExpressionConfidenceSystem
+from core.trait_conflict_resolver import TraitConflictResolver
+from core.speech_fingerprint import SpeechFingerprintEngine
 
 
 # ── Pipeline result ───────────────────────────────────────────────────────────
@@ -198,12 +202,31 @@ class TransformationPipeline:
         self._circuit       = CircuitBreaker(logger=logger)
         self._rules_engine  = CommunicationRulesEngine(logger=logger)
 
-        # Extension hooks — replace with real implementations as parts are built
-        self.stability_hook:   Optional[StabilityHookFn]   = None  # Part 5
-        self.conflict_hook:    Optional[ConflictHookFn]    = None  # Part 6
-        self.fingerprint_hook: Optional[FingerprintHookFn] = None  # Parts 7-8
+        # ── Behavioral Logic modules (auto-wired; may be replaced externally) ─
+        # Resolve profile for stability / fingerprint params
+        _profile = self._resolve_profile()
+        _sp = _profile.stability_parameters if _profile else None
+        _habits = _profile.communication_habits if _profile else None
 
-        # Track the last PersonaVector for the stability stub
+        self._stability_engine   = CommunicationStabilityLayer(
+            smoothing_factor=_sp.smoothing_factor if _sp else 0.50,
+            drift_threshold=_sp.drift_threshold   if _sp else 0.30,
+            logger=logger,
+        )
+        self._confidence_engine  = ExpressionConfidenceSystem(logger=logger)
+        self._conflict_resolver  = TraitConflictResolver(logger=logger)
+        self._fingerprint_engine = SpeechFingerprintEngine(
+            habits=_habits,
+            logger=logger,
+        )
+
+        # Extension hooks — external callers may replace with custom implementations.
+        # When not None, these override the built-in engines above.
+        self.stability_hook:   Optional[StabilityHookFn]   = None
+        self.conflict_hook:    Optional[ConflictHookFn]    = None
+        self.fingerprint_hook: Optional[FingerprintHookFn] = None
+
+        # Track the last PersonaVector for the stability engine
         self._prev_vector: Optional[PersonaVector] = None
 
     # ── Main entry point ──────────────────────────────────────────────────────
@@ -328,27 +351,30 @@ class TransformationPipeline:
 
             # ── Stage 4: Communication Stability Check ────────────────────────
             stages.append("stability_check")
+            prev_vector = self._prev_vector
             if self.stability_hook is not None:
+                # External hook takes priority (backward compatibility)
                 stable_vector = self.stability_hook(
                     raw_vector,
-                    self._prev_vector or raw_vector,
+                    prev_vector or raw_vector,
                     state,
                 )
             else:
-                # STUB — Part 5 will implement smoothing
-                stable_vector = raw_vector
-                if self._prev_vector is None:
-                    warnings.append(
-                        "stability_check: stub active (Part 5). "
-                        "No smoothing applied."
-                    )
+                # Real implementation — CommunicationStabilityLayer
+                stable_vector = self._stability_engine(
+                    current_vector=raw_vector,
+                    previous_vector=prev_vector or raw_vector,
+                    current_state=state,
+                )
 
             # ── Stage 5: Expression Confidence Attenuation ───────────────────
-            # Already applied in PersonaVectorEngine.build() via expression_confidence.
-            # This stage records the final confidence and makes it available to
-            # downstream stages without recalculating.
+            # Re-compute using ExpressionConfidenceSystem which folds in both
+            # the criticality cap AND the entropy-linked uncertainty multiplier.
             stages.append("expression_confidence_attenuation")
-            final_vector = stable_vector
+            conf_calc      = self._confidence_engine.compute(ghost)
+            expression_confidence = conf_calc.final_confidence
+            # Re-apply to the stable vector so uncertainty-based fade is reflected
+            final_vector = stable_vector.scale(expression_confidence).clamp()
 
             # ── Stage 6: Expression Budget Allocation ────────────────────────
             stages.append("expression_budget_allocation")
@@ -360,23 +386,16 @@ class TransformationPipeline:
             # ── Stage 7: Trait Conflict Resolution ───────────────────────────
             stages.append("trait_conflict_resolution")
             if self.conflict_hook is not None:
+                # External hook takes priority
                 resolved_vector = self.conflict_hook(final_vector, budget, state)
             else:
-                # STUB — Part 6 will resolve directness vs. verbosity, etc.
-                resolved_vector = final_vector
-                warnings.append(
-                    "trait_conflict_resolution: stub active (Part 6). "
-                    "Conflicts not resolved."
-                )
+                # Real implementation — TraitConflictResolver
+                resolved_vector = self._conflict_resolver(final_vector, budget, state)
 
             # ── Stage 8: Speech Fingerprint Application ───────────────────────
             stages.append("speech_fingerprint")
             candidate_text = self._apply_fingerprint(
                 ghost.content, resolved_vector, budget, state
-            )
-            warnings.append(
-                "speech_fingerprint: stub active (Parts 7-8). "
-                "Content returned unchanged."
             )
 
             # ── Stage 9: Validation Pipeline (CircuitBreaker) ─────────────────
@@ -454,19 +473,12 @@ class TransformationPipeline:
         """
         Stage 8: Speech Fingerprint Application.
 
-        STUB — Parts 7-8 will implement:
-            - Preferred sentence lengths and pacing
-            - Preferred transitions and explanation structure
-            - Preferred questioning style and analogy usage
-            - Organization patterns
-
-        Currently returns content unchanged. This is correct behaviour
-        for now: the CircuitBreaker will always pass unmodified GhostMind
-        content, and the stub warning in the pipeline makes the gap visible.
+        Uses the built-in SpeechFingerprintEngine (structural shaping only).
+        An external fingerprint_hook, if set, takes full priority.
         """
         if self.fingerprint_hook is not None:
             return self.fingerprint_hook(content, vector, budget, state)
-        return content
+        return self._fingerprint_engine(content, vector, budget, state)
 
     # ── Factory ───────────────────────────────────────────────────────────────
 
