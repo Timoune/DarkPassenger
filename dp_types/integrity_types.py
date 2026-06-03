@@ -1,5 +1,5 @@
 """
-dp_types/integrity_types.py — DarkPassenger Integrity Layer Data Contracts
+types/integrity_types.py — DarkPassenger Integrity Layer Data Contracts
 
 These types are the shared language between GhostMind and DarkPassenger.
 They define what a GhostMind output looks like, what the circuit breaker
