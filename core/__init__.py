@@ -1,7 +1,16 @@
 """
-core/__init__.py — DarkPassenger Core Infrastructure
+core/__init__.py — DarkPassenger Core Infrastructure  v1.4
 
 Public exports for the core infrastructure layer.
+
+v1.4 additions
+──────────────
+  • AuditLog, AuditRecord               — Personality Audit Log  (§14)
+  • BehavioralReviewSystem              — Diagnostic review engine (§15)
+  • StabilityReport, QualityReport      — Report types
+  • DriftDetectionReport, AdaptationReport, FullReviewBundle
+  • PerformanceManager                  — Fast-path + caches (§17)
+  • PersonaProfileCache, OverlayConfigCache, FastPathResult
 """
 
 from core.persona_vector import (
@@ -51,15 +60,40 @@ from core.speech_fingerprint import (
     SINGLE_SENTENCE_THRESHOLD,
 )
 
+# ── v1.4: Performance & Monitoring Layer ──────────────────────────────────────
+from core.audit_log import (
+    AuditLog,
+    AuditRecord,
+)
+from core.behavioral_review import (
+    BehavioralReviewSystem,
+    StabilityReport,
+    QualityReport,
+    DriftDetectionReport,
+    AdaptationReport,
+    AdaptationRecommendation,
+    FullReviewBundle,
+)
+from core.performance import (
+    PerformanceManager,
+    PersonaProfileCache,
+    OverlayConfigCache,
+    FastPathResult,
+    FAST_PATH_CONF_TOLERANCE,
+    FAST_PATH_MIN_HISTORY,
+    DEFAULT_PROFILE_TTL,
+)
+
+
 __all__ = [
-    # Persona Vector
+    # ── Persona Vector ────────────────────────────────────────────────────────
     "PersonaVector",
     "ExpressionBudget",
     "OverlayType",
     "RelationshipContext",
     "CommunicationIntent",
     "PersonaVectorEngine",
-    # Config
+    # ── Config ────────────────────────────────────────────────────────────────
     "ConfigManager",
     "PersonaProfile",
     "OverlayPreferences",
@@ -68,14 +102,14 @@ __all__ = [
     "AdaptiveTuning",
     "ValidationError",
     "CURRENT_SCHEMA_VERSION",
-    # Runtime State
+    # ── Runtime State ─────────────────────────────────────────────────────────
     "RuntimeState",
     "RuntimeStateManager",
-    # Pipeline
+    # ── Pipeline ──────────────────────────────────────────────────────────────
     "TransformationPipeline",
     "TransformationInput",
     "TransformationResult",
-    # Behavioral Logic — The Passenger (Part 5-8)
+    # ── Behavioral Logic (Parts 5-8) ──────────────────────────────────────────
     "CommunicationStabilityLayer",
     "StabilityCheckResult",
     "WARMUP_RESPONSES",
@@ -87,4 +121,23 @@ __all__ = [
     "SpeechFingerprintEngine",
     "FingerprintResult",
     "SINGLE_SENTENCE_THRESHOLD",
+    # ── v1.4: Audit Log (§14) ─────────────────────────────────────────────────
+    "AuditLog",
+    "AuditRecord",
+    # ── v1.4: Behavioral Review System (§15) ──────────────────────────────────
+    "BehavioralReviewSystem",
+    "StabilityReport",
+    "QualityReport",
+    "DriftDetectionReport",
+    "AdaptationReport",
+    "AdaptationRecommendation",
+    "FullReviewBundle",
+    # ── v1.4: Performance Manager (§17) ───────────────────────────────────────
+    "PerformanceManager",
+    "PersonaProfileCache",
+    "OverlayConfigCache",
+    "FastPathResult",
+    "FAST_PATH_CONF_TOLERANCE",
+    "FAST_PATH_MIN_HISTORY",
+    "DEFAULT_PROFILE_TTL",
 ]
